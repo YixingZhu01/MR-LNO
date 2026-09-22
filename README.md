@@ -173,6 +173,12 @@ python main.py -n Re100Ma2_t3_s3_newrun --stages 3 --data-dir "<data-root>"
 
 The author identifies `main_NS_multistage.py` as the training source for the published models. Matching defaults are batch size 8, 10 rounds × 10 epochs per stage, 500 iterations per epoch, rollout length 10 and raw-frame stride 3. Training samples are 41–210; test samples are 1–40. Use `--stages 3` explicitly in this refactored entry point. Configuration alignment does not imply bitwise reproduction of the historical weights.
 
+## 数据可用性 / Data availability
+
+支持本研究的训练数据和测试数据可向通讯作者提出合理请求后获取。本仓库不上传训练数据和测试数据。
+
+The training and test data supporting this study are available from the corresponding author upon reasonable request. These datasets are not included in this repository.
+
 ## 数据目录
 
 ```text
@@ -302,6 +308,6 @@ Input: NPZ key `input`, shape `(B,4,128,128)`, channels `u,v,rho,T` in the origi
 
 这组预训练模型用于 Re100Ma2，原始数据帧间隔为 `t_interval=3`；当前 `main.py` 的默认间隔已与作者训练脚本对齐为 3。
 
-These pretrained models use Re100Ma2 with a raw-frame stride of 3, matching the corrected training defaults. Raw datasets and reference trajectories are not included; quantitative validation requires matching reference data and preprocessing. Inference compatibility has been verified; full training reproduction has not been validated.
+These pretrained models use Re100Ma2 with a raw-frame stride of 3, matching the corrected training defaults. Quantitative validation requires the corresponding test data and matching preprocessing; see the Data availability statement above. Inference compatibility has been verified; full training reproduction has not been validated.
 
-原始测试数据与参考轨迹仍未提供；验证误差或论文结果需要相应真值数据。推理包内记录了四个原始模型文件的 SHA-256，便于追踪来源。
+验证误差或论文结果需要相应测试数据，获取方式见上方“数据可用性”声明。推理包内记录了四个原始模型文件的 SHA-256，便于追踪来源。

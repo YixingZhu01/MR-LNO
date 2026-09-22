@@ -17,7 +17,7 @@ This project builds on the `Train_Validation` code from the original [LNO reposi
 ## 目录
 
 ```text
-LNO_multistage_plugin_minimal/
+MR-LNO/
 ├─ main.py                  # 训练与评估入口，支持 --stages
 ├─ multistage.py            # 多阶段插件
 ├─ pretrained.py            # 已提供模型的安全推理与运行测试入口
@@ -57,34 +57,38 @@ python -m pip install -r requirements.txt
 
 ## 使用方法
 
-先进入这个独立目录：
+先进入下载或克隆后的仓库目录（以下假设目录名为 `MR-LNO`）：
 
 ```powershell
-Set-Location "<project-directory>\LNO_multistage_plugin_minimal"
+cd MR-LNO
 ```
+
+以下命令中的 `<data-root>` 是占位符，请将其替换为自己电脑上的数据根目录（即包含 `ComNS128Re100Ma2` 文件夹的目录），不要原样输入尖括号。路径可以是绝对路径，也可以是相对于当前工作目录的路径；本项目不要求特定盘符。
+
+Replace `<data-root>` with your own data root containing the `ComNS128Re100Ma2` folder. It may be an absolute path or a path relative to your current working directory. Do not type the angle brackets literally. No particular drive letter is required.
 
 原始单阶段 LNO：
 
 ```powershell
-python main.py -n baseline --stages 1 --data-dir "G:/LNOdata/"
+python main.py -n baseline --stages 1 --data-dir "<data-root>"
 ```
 
 两阶段：
 
 ```powershell
-python main.py -n stage2 --stages 2 --data-dir "G:/LNOdata/"
+python main.py -n stage2 --stages 2 --data-dir "<data-root>"
 ```
 
 三阶段：
 
 ```powershell
-python main.py -n stage3 --stages 3 --data-dir "G:/LNOdata/"
+python main.py -n stage3 --stages 3 --data-dir "<data-root>"
 ```
 
 `--stages` 默认是 `1`，因此不写这个参数时就是原始 LNO：
 
 ```powershell
-python main.py -n baseline --data-dir "G:/LNOdata/"
+python main.py -n baseline --data-dir "<data-root>"
 ```
 
 ## 接口行为
@@ -102,7 +106,7 @@ python main.py -n baseline --data-dir "G:/LNOdata/"
 早期单阶段 `torch.save(model)` 文件属于 Python pickle。只有确认文件可信时才允许加载：
 
 ```powershell
-python main.py -n old_baseline --eval-only --allow-legacy-pickle --data-dir "G:/LNOdata/"
+python main.py -n old_baseline --eval-only --allow-legacy-pickle --data-dir "<data-root>"
 ```
 
 加载可信旧模型时，程序还会补齐旧版 PyTorch `GELU` 缺失的 `approximate="none"` 属性，使原 LNO 整模型检查点可以在新版 PyTorch 中继续前向运行。
@@ -110,7 +114,7 @@ python main.py -n old_baseline --eval-only --allow-legacy-pickle --data-dir "G:/
 `--eval-only` 会跳过训练和保存，直接加载已有检查点，因此不会覆盖旧模型。版本 1 多阶段模型也通过同一方式评估：
 
 ```powershell
-python main.py -n old_stage3 --stages 3 --eval-only --data-dir "G:/LNOdata/"
+python main.py -n old_stage3 --stages 3 --eval-only --data-dir "<data-root>"
 ```
 
 ## 多阶段原理
@@ -160,7 +164,7 @@ num_blocks = 4
 ## 数据目录
 
 ```text
-G:/LNOdata/
+<data-root>/
 └─ ComNS128Re100Ma2/
    ├─ ComNS128Re100Ma2_1.mat
    ├─ ComNS128Re100Ma2_2.mat
@@ -175,11 +179,11 @@ G:/LNOdata/
 
 ```powershell
 # 自动选择（默认）
-python main.py -n stage2 --stages 2 --device auto --data-dir "G:/LNOdata/"
+python main.py -n stage2 --stages 2 --device auto --data-dir "<data-root>"
 
 # 明确指定设备
-python main.py -n stage2 --stages 2 --device cuda:0 --data-dir "G:/LNOdata/"
-python main.py -n stage2 --stages 2 --device cpu --data-dir "G:/LNOdata/"
+python main.py -n stage2 --stages 2 --device cuda:0 --data-dir "<data-root>"
+python main.py -n stage2 --stages 2 --device cpu --data-dir "<data-root>"
 ```
 
 CPU 路径可用于功能验证，但完整 LNO 训练计算量较大，实际训练仍建议使用 GPU。
@@ -189,13 +193,13 @@ CPU 路径可用于功能验证，但完整 LNO 训练计算量较大，实际�
 默认随机种子为 `0`，并启用 PyTorch 确定性算法。Python、NumPy、PyTorch 和全部 CUDA 设备会使用同一个种子：
 
 ```powershell
-python main.py -n stage2 --stages 2 --seed 2026 --device auto --data-dir "G:/LNOdata/"
+python main.py -n stage2 --stages 2 --seed 2026 --device auto --data-dir "<data-root>"
 ```
 
 若更重视训练速度并接受非确定性结果，可使用：
 
 ```powershell
-python main.py -n stage2 --stages 2 --seed 2026 --no-deterministic --data-dir "G:/LNOdata/"
+python main.py -n stage2 --stages 2 --seed 2026 --no-deterministic --data-dir "<data-root>"
 ```
 
 每个版本 2 检查点都会记录种子、确定性开关、数据划分、网络配置、优化器与学习率调度器、梯度裁剪、初始化系数、实际运行设备与 GPU 信息、Python/PyTorch/NumPy/SciPy/CUDA 版本，以及核心源代码和当前 Legendre 滤波器资产的 SHA-256 指纹。加载时会核对完整网络配置、阶段数、物理任务、数据划分、输入历史长度和训练 rollout，避免把不完整或语义不兼容的权重静默用于评估。

@@ -1,6 +1,8 @@
 # 原 LNO + 可选多阶段训练
 
-本目录是从原 LNO 的 Train_Validation 代码派生的独立增强工程，保留基线网络、数据集处理、单阶段训练、测试和 Legendre 滤波器。
+本项目基于原 LNO 开源仓库 [torch-local-neural-operators](https://github.com/PPhub-hy/torch-local-neural-operators) 中的 `Train_Validation` 代码开发，保留基线网络、数据集处理、单阶段训练、测试和 Legendre 滤波器，并增加可选的多阶段残差学习功能。
+
+This project builds on the `Train_Validation` code from the original [LNO repository](https://github.com/PPhub-hy/torch-local-neural-operators), retaining the baseline network, data processing, single-stage training, evaluation and Legendre filters while adding optional multi-stage residual learning.
 
 在此基础上主要增加或修正了：
 
@@ -266,8 +268,8 @@ Input: NPZ key `input`, shape `(B,4,128,128)`, channels `u,v,rho,T` in the origi
 
 `--stages 1/2/3` 分别使用第 1 阶段、前 2 阶段之和、全部 3 阶段之和；不是单独使用第 2 或第 3 残差网络。每一步以当前累计预测作为下一步输入。输出不包含初始帧，且不会覆盖已有输出文件。
 
-文件名及原测试脚本表明，这组模型对应 Re100Ma2、原始数据帧间隔 `t_interval=3`；请勿用当前 `main.py` 的默认间隔 5 解读预测时间。原元数据只记录阶段路径、阶段数和 `spectral_loss_type='fft'`，不含完整训练数据划分或训练配置。因此不能声称当前简化训练入口完整复现了这组权重的训练过程。
+这组预训练模型用于 Re100Ma2，原始数据帧间隔为 `t_interval=3`；请勿用当前 `main.py` 的默认间隔 5 解读预测时间。
 
-Raw datasets and reference trajectories are not included. Quantitative validation requires matching reference data and preprocessing. The original metadata is incomplete; this release provides verified inference compatibility, not a claim that the current minimal trainer reproduces the original training procedure.
+These pretrained models use Re100Ma2 with a raw-frame stride of 3, rather than the current training entry point's default stride of 5. Raw datasets and reference trajectories are not included; quantitative validation requires matching reference data and preprocessing. Inference compatibility has been verified; full training reproduction has not been validated.
 
 原始测试数据与参考轨迹仍未提供；验证误差或论文结果需要相应真值数据。推理包内记录了四个原始模型文件的 SHA-256，便于追踪来源。

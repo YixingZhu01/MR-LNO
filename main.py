@@ -32,14 +32,14 @@ SINGLE_CHECKPOINT_TYPE = "lno-single-stage"
 MULTISTAGE_CHECKPOINT_TYPE = "lno-multistage"
 
 
-# Original LNO training configuration.
+# Defaults aligned with the author's main_NS_multistage.py (supplied models).
 in_length = 1
 learning_rate = 0.001
 weight_decay = 1e-4
-batch_size = 2
-print_frequency = 50
+batch_size = 8
+print_frequency = 25
 rounds = 10
-epochs = 20
+epochs = 10
 epochs_overall = rounds * epochs
 recurrent = 10
 steps_per_epoch = 500
@@ -50,7 +50,7 @@ scheduler_gamma = 0.7
 # Original learning task.
 Re = 100
 Ma = 2
-t_interval = 5
+t_interval = 3
 
 # Original LNO network configuration.
 N = 12
@@ -344,8 +344,8 @@ def create_model(stages: int, model_factory=make_network):
 
 def get_orders() -> tuple[list[int], list[int]]:
     if Re == 100 and Ma == 2:
-        orders_all = list(range(1, 211)) + list(range(801, 816))
-        orders_test = list(range(1, 11)) + list(range(801, 816))
+        orders_all = list(range(1, 211))
+        orders_test = list(range(1, 41))
     elif Re == 20:
         orders_all = list(range(1, 451))
         orders_test = list(range(1, 51))

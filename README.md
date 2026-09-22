@@ -8,7 +8,7 @@ This project builds on the `Train_Validation` code from the original [LNO reposi
 
 1. `multistage.py`：多阶段残差训练逻辑。
 2. `main.py --stages 1/2/3`：选择是否启用多阶段。
-3. GPU 优先的设备选择、确定性运行和版本化安全检查点。
+3. GPU 优先的设备选择，以及供新运行使用的随机性控制和版本化安全检查点（非已发布模型的历史训练设置）。
 4. 数据与测试辅助函数的多帧通道排列、旧 PyTorch 检查点及评估指标兼容处理。
 5. 缓存复用前检查数据划分，避免先评估后训练时误用空训练缓存。
 
@@ -40,7 +40,8 @@ MR-LNO/
 └─ tests/
    ├─ test_multistage.py    # 训练、检查点与设备兼容测试
    ├─ test_cache_splits.py  # 数据划分与缓存复用测试
-   └─ test_pretrained.py    # 预训练推理与文件输入输出测试
+   ├─ test_pretrained.py    # 预训练推理与文件输入输出测试
+   └─ test_training_config.py # 与作者训练脚本的参数一致性测试
 ```
 
 `models/` 已提供三个阶段的原始模型、元数据和安全推理包。不包含原始训练/测试数据、`.idea`、缓存、日志、实验输出和频响分析脚本。
@@ -128,38 +129,49 @@ Stage 3: f3(x) ≈ y - f1(x) - f2(x)
 
 训练 Stage 2/3 时，已经训练完成的阶段会被冻结。自回归滚动到下一时刻时，使用当前所有阶段的总输出，而不是只使用残差网络输出。
 
-训练节奏与原代码一致：
+默认训练参数已按作者提供的 `main_NS_multistage.py` 及其调用的 `lib/train_multistage.py` 对齐：
 
 ```text
 每个 Stage
 └─ 10 rounds
-   └─ 每轮 20 epochs
+   └─ 每轮 10 epochs（每阶段共 100 epochs）
       └─ 每个 epoch 500 iterations
 ```
 
 每个阶段使用独立 Adam；每轮结束执行原来的 StepLR（`gamma=0.7`）。
 
-## 调整原 LNO 参数
+## 已发布模型的训练配置
 
-在 `main.py` 顶部修改，位置和原代码一致：
+作者确认已发布模型由 `main_NS_multistage.py` 训练。下面列出该脚本的参数，当前仓库 `main.py` 的对应默认值已同步；但 `main.py` 是整理后的实现，并非历史训练脚本的逐字副本。
 
 ```python
 learning_rate = 0.001
 weight_decay = 1e-4
-batch_size = 2
+batch_size = 8
+print_frequency = 25
 rounds = 10
-epochs = 20
+epochs = 10
 recurrent = 10
 
 Re = 100
 Ma = 2
-t_interval = 5
+t_interval = 3
 
 N = 12
 K = 2
 M = 6
 num_blocks = 4
 ```
+
+训练集编号为 **41–210（170 个样本）**，测试集编号为 **1–40（40 个样本）**。输入历史长度为 1，训练 rollout 长度为 10；每个 epoch 500 次迭代。每阶段使用独立 Adam，梯度裁剪阈值为 5.0，每轮结束执行 StepLR（`step_size=1, gamma=0.7`）。网络使用 `norm_factors=[0.5,0.5,5,10]` 和 `if_ln=True`。
+
+原脚本 `--train_stages` 默认值为 3；本整理版保留 `--stages` 默认值 1 以支持单阶段基线。运行对应的三阶段配置必须显式传入 `--stages 3`：
+
+```bash
+python main.py -n Re100Ma2_t3_s3_newrun --stages 3 --data-dir "<data-root>"
+```
+
+The author identifies `main_NS_multistage.py` as the training source for the published models. Matching defaults are batch size 8, 10 rounds × 10 epochs per stage, 500 iterations per epoch, rollout length 10 and raw-frame stride 3. Training samples are 41–210; test samples are 1–40. Use `--stages 3` explicitly in this refactored entry point. Configuration alignment does not imply bitwise reproduction of the historical weights.
 
 ## 数据目录
 
@@ -188,21 +200,27 @@ python main.py -n stage2 --stages 2 --device cpu --data-dir "<data-root>"
 
 CPU 路径可用于功能验证，但完整 LNO 训练计算量较大，实际训练仍建议使用 GPU。
 
-## 可复现运行
+## 新运行的随机性控制（不代表历史模型的训练设置）
 
-默认随机种子为 `0`，并启用 PyTorch 确定性算法。Python、NumPy、PyTorch 和全部 CUDA 设备会使用同一个种子：
+作者提供的原训练脚本没有显式固定 Python、NumPy、PyTorch/CUDA 随机种子，也没有启用确定性算法。不能把下面的默认种子 `0`、确定性开关或当前验证环境追溯为已发布模型的历史训练条件，不能保证重新训练得到逐位相同的权重。
+
+本仓库整理版为**今后的新运行**增加了 `configure_reproducibility`：设置 Python、NumPy、PyTorch 和 CUDA 的种子；启用 `torch.use_deterministic_algorithms(True)`；关闭 cuDNN benchmark、启用 cuDNN deterministic，并配置 cuBLAS 工作区。默认种子为 `0`，也可自行指定：
 
 ```powershell
 python main.py -n stage2 --stages 2 --seed 2026 --device auto --data-dir "<data-root>"
 ```
 
-若更重视训练速度并接受非确定性结果，可使用：
+这些控制旨在减少同一代码、数据、缓存状态和软硬件环境下的运行差异，不保证跨设备、跨版本完全一致，也不是已经完成全程训练复现的证明。代码内设置的 `PYTHONHASHSEED` 不会追溯改变当前解释器启动时的哈希种子；若需控制它，应在启动 Python 前设置环境变量。
+
+可使用下面的开关关闭确定性算法要求；它仍然设置随机种子，因此也不等于原训练脚本未固定种子的行为：
 
 ```powershell
 python main.py -n stage2 --stages 2 --seed 2026 --no-deterministic --data-dir "<data-root>"
 ```
 
-每个版本 2 检查点都会记录种子、确定性开关、数据划分、网络配置、优化器与学习率调度器、梯度裁剪、初始化系数、实际运行设备与 GPU 信息、Python/PyTorch/NumPy/SciPy/CUDA 版本，以及核心源代码和当前 Legendre 滤波器资产的 SHA-256 指纹。加载时会核对完整网络配置、阶段数、物理任务、数据划分、输入历史长度和训练 rollout，避免把不完整或语义不兼容的权重静默用于评估。
+整理版新训练生成的版本 2 检查点会记录种子、确定性开关、数据划分、网络配置、优化器与学习率调度器、梯度裁剪、初始化系数、实际运行设备与 GPU 信息、Python/PyTorch/NumPy/SciPy/CUDA 版本，以及核心源代码和当前 Legendre 滤波器资产的 SHA-256 指纹。加载时核对相应配置。**这些新记录机制不适用于历史 `.pp` 文件；推理包转换也不会补造未知的历史种子或环境。**
+
+Randomness controls were added to the refactored code for new runs. The supplied original training script does not explicitly fix random seeds or enable deterministic algorithms. The published weights must not be described as having been trained with seed 0 or the current validation environment. Matching seeds and deterministic settings do not guarantee identical results across software/hardware environments or reproduce unknown historical random states.
 
 命令行入口及 `load_trained_model` 会执行上述完整语义校验；`load_single_stage`、`load_multistage` 是供工具代码使用的低层权重读取函数，其中多阶段读取可通过 `expected_stages` 强制检查阶段数。
 
@@ -232,7 +250,7 @@ python -m unittest discover -s tests -v
 ## 当前验证范围与限制
 
 - 自动化测试覆盖缓存复用、训练/加载接口及预训练推理输入转换。此次发布未重新运行完整训练实验。
-- 多阶段训练保留现有实现：旧阶段通过 `torch.no_grad()` 计算。这不仅冻结旧参数，也切断经过旧阶段的输入梯度，因此多步 rollout 的梯度不等同于完整组合模型的梯度；本次缓存修复没有改变这一行为。
+- 多阶段训练保留作者原训练器的行为：旧阶段通过 `torch.no_grad()` 计算，同时冻结旧参数并切断经过旧阶段的输入梯度；此次配置对齐没有改变这一行为。
 - 当前网络仍按四通道、单帧输入使用；辅助函数的多帧通道修复不代表网络已支持 `in_length > 1`。
 - 当前 `rho/T` 评估采用对数变量的逆变换；将 `if_ln` 改为 `False` 时，需同步调整评估转换逻辑。
 - 仓库包含运行所需的 Legendre 滤波器及下列作者提供的模型文件，不包含训练/测试原始数据或实验输出。数据缓存采用 pickle，仅应加载可信来源的缓存。
@@ -282,8 +300,8 @@ Input: NPZ key `input`, shape `(B,4,128,128)`, channels `u,v,rho,T` in the origi
 
 `--stages 1/2/3` 分别使用第 1 阶段、前 2 阶段之和、全部 3 阶段之和；不是单独使用第 2 或第 3 残差网络。每一步以当前累计预测作为下一步输入。输出不包含初始帧，且不会覆盖已有输出文件。
 
-这组预训练模型用于 Re100Ma2，原始数据帧间隔为 `t_interval=3`；请勿用当前 `main.py` 的默认间隔 5 解读预测时间。
+这组预训练模型用于 Re100Ma2，原始数据帧间隔为 `t_interval=3`；当前 `main.py` 的默认间隔已与作者训练脚本对齐为 3。
 
-These pretrained models use Re100Ma2 with a raw-frame stride of 3, rather than the current training entry point's default stride of 5. Raw datasets and reference trajectories are not included; quantitative validation requires matching reference data and preprocessing. Inference compatibility has been verified; full training reproduction has not been validated.
+These pretrained models use Re100Ma2 with a raw-frame stride of 3, matching the corrected training defaults. Raw datasets and reference trajectories are not included; quantitative validation requires matching reference data and preprocessing. Inference compatibility has been verified; full training reproduction has not been validated.
 
 原始测试数据与参考轨迹仍未提供；验证误差或论文结果需要相应真值数据。推理包内记录了四个原始模型文件的 SHA-256，便于追踪来源。

@@ -215,7 +215,7 @@ python -m unittest discover -s tests -v
 
 ## 当前验证范围与限制
 
-- 44 项自动化测试通过，包括先评估后训练、更换训练集、兼容缓存复用及独立缓存再次加载。此次发布未重新运行完整训练实验。
+- 自动化测试覆盖缓存复用、训练/加载接口及预训练推理输入转换。此次发布未重新运行完整训练实验。
 - 多阶段训练保留现有实现：旧阶段通过 `torch.no_grad()` 计算。这不仅冻结旧参数，也切断经过旧阶段的输入梯度，因此多步 rollout 的梯度不等同于完整组合模型的梯度；本次缓存修复没有改变这一行为。
 - 当前网络仍按四通道、单帧输入使用；辅助函数的多帧通道修复不代表网络已支持 `in_length > 1`。
 - 当前 `rho/T` 评估采用对数变量的逆变换；将 `if_ln` 改为 `False` 时，需同步调整评估转换逻辑。
@@ -231,4 +231,43 @@ python -m unittest discover -s tests -v
 - `Re100Ma2_t3_s3_stage3.pp`
 - `Re100Ma2_t3_s3_multistage_meta.pt`
 
-这些分阶段文件与本项目当前默认生成的单个版本化多阶段检查点命名/组织方式不同，尚未验证可由当前入口直接加载。44 项测试通过并不代表这组模型已完成加载或物理精度验证。加载可能使用 pickle 的历史模型前，请确认来源可信；不要对不可信文件启用不安全反序列化。
+这四个文件保留原貌。另提供 `models/Re100Ma2_t3_s3_inference.pt`，将同一组权重、网络配置及滤波器导出为可用 `weights_only=True` 加载的推理包。三个阶段的参数逐一一致；在固定非零合成输入上，各阶段和累计输出与原模型在 CPU 上完全一致。这不是重新训练，也不是物理精度复现。
+
+旧 `.pp` 文件使用整模型 pickle，不建议测试者直接加载；使用下方安全推理入口，无需启用 `--allow-legacy-pickle`。推理包与 `main.py` 的训练检查点格式不同，请勿混用入口。
+
+### 下载后直接测试 / Quick start
+
+在克隆的仓库根目录安装依赖后，执行：
+
+```bash
+git clone https://github.com/YixingZhu01/MR-LNO.git
+cd MR-LNO
+python -m pip install -r requirements.txt
+python pretrained.py --smoke-test --device cpu
+```
+
+This runs the supplied pretrained weights on a synthetic, nonzero input. No dataset or retraining is required. A successful run prints `PASS` and output shape `(1, 1, 4, 128, 128)`. This checks execution, **not scientific accuracy**.
+
+上述命令无需数据集或重新训练，成功后打印 `PASS` 和输出形状。它只验证加载与推理能运行，不验证论文精度。支持 CUDA 的环境也可运行：
+
+```bash
+python pretrained.py --smoke-test --device cuda:0 --stages 3 --steps 2
+```
+
+### 使用自己的输入 / Custom input
+
+准备 `.npz` 文件，键名为 `input`，数组形状为 `(batch, 4, 128, 128)`，通道依次为 `u, v, rho, T`。必须采用与原数据一致的无量纲量和空间排列；`rho/T` 为正的物理变量，**不要提前取对数或乘网络归一化系数**。本入口自动完成对数变换，模型内部应用归一化系数。
+
+```bash
+python pretrained.py --input initial_state.npz --output outputs/prediction.npz --device cpu --stages 3 --steps 10
+```
+
+Input: NPZ key `input`, shape `(B,4,128,128)`, channels `u,v,rho,T` in the original nondimensional units. Supply positive physical density and temperature, not their logarithms. Output: NPZ key `prediction`, shape `(steps,B,4,128,128)`, in physical variables (density/temperature exponentiated). The initial frame is excluded. Existing output files are not overwritten.
+
+`--stages 1/2/3` 分别使用第 1 阶段、前 2 阶段之和、全部 3 阶段之和；不是单独使用第 2 或第 3 残差网络。每一步以当前累计预测作为下一步输入。输出不包含初始帧，且不会覆盖已有输出文件。
+
+文件名及原测试脚本表明，这组模型对应 Re100Ma2、原始数据帧间隔 `t_interval=3`；请勿用当前 `main.py` 的默认间隔 5 解读预测时间。原元数据只记录阶段路径、阶段数和 `spectral_loss_type='fft'`，不含完整训练数据划分或训练配置。因此不能声称当前简化训练入口完整复现了这组权重的训练过程。
+
+Raw datasets and reference trajectories are not included. Quantitative validation requires matching reference data and preprocessing. The original metadata is incomplete; this release provides verified inference compatibility, not a claim that the current minimal trainer reproduces the original training procedure.
+
+原始测试数据与参考轨迹仍未提供；验证误差或论文结果需要相应真值数据。推理包内记录了四个原始模型文件的 SHA-256，便于追踪来源。

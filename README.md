@@ -18,9 +18,17 @@ This project builds on the `Train_Validation` code from the original [LNO reposi
 
 ```text
 LNO_multistage_plugin_minimal/
-├─ main.py                  # LNO 唯一入口，增加 --stages
+├─ main.py                  # 训练与评估入口，支持 --stages
 ├─ multistage.py            # 多阶段插件
+├─ pretrained.py            # 已提供模型的安全推理与运行测试入口
+├─ requirements.txt         # 环境依赖
 ├─ PlotComNS.m
+├─ models/
+│  ├─ Re100Ma2_t3_s3_inference.pt        # 推荐使用的安全推理包
+│  ├─ Re100Ma2_t3_s3_stage1.pp           # 原始第一阶段模型
+│  ├─ Re100Ma2_t3_s3_stage2.pp           # 原始第二阶段残差模型
+│  ├─ Re100Ma2_t3_s3_stage3.pp           # 原始第三阶段残差模型
+│  └─ Re100Ma2_t3_s3_multistage_meta.pt  # 原始阶段元数据
 ├─ Data/
 │  └─ DatasetNS.py          # 原 LNO 数据集
 ├─ lib/
@@ -30,10 +38,12 @@ LNO_multistage_plugin_minimal/
 │  ├─ utils.py
 │  └─ legendres/*.mat       # 原 LNO 必需滤波器
 └─ tests/
-   └─ test_multistage.py
+   ├─ test_multistage.py    # 训练、检查点与设备兼容测试
+   ├─ test_cache_splits.py  # 数据划分与缓存复用测试
+   └─ test_pretrained.py    # 预训练推理与文件输入输出测试
 ```
 
-没有复制 `.idea`、缓存、日志、已训练模型、输出结果和频响分析脚本。
+`models/` 已提供三个阶段的原始模型、元数据和安全推理包。不包含原始训练/测试数据、`.idea`、缓存、日志、实验输出和频响分析脚本。
 
 ## 环境安装
 

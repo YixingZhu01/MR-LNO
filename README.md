@@ -208,8 +208,6 @@ CPU 路径可用于功能验证，但完整 LNO 训练计算量较大，实际�
 
 ## 新训练的随机性控制
 
-我训练仓库中已发布模型时使用的 `main_NS_multistage.py` 没有显式设置随机种子，也没有启用 PyTorch 确定性算法。因此，无法根据现有记录确定当时的随机状态，重新训练也不能保证得到完全相同的权重。
-
 当前仓库的 `main.py` 为今后的训练提供了 `--seed` 和 `--deterministic` 参数。运行时会用指定种子初始化 Python `random`、NumPy 和 PyTorch；有 CUDA 设备时也会设置 CUDA 随机种子。确定性选项默认开启。下面以 `2026` 作为新训练的示例种子，该数字与已发布模型的训练无关：
 
 ```powershell
@@ -224,7 +222,7 @@ python main.py -n stage3_newrun --stages 3 --seed 2026 --no-deterministic --data
 
 为比较新训练结果，应同时保持代码、数据、数据缓存及软硬件环境一致。即使固定种子和启用确定性算法，也不能保证不同环境下得到完全相同的结果。当前 `main.py` 在新生成的版本 2 检查点中保存运行配置和环境信息；这些记录不属于已上传的历史 `.pp` 模型。
 
-The `main_NS_multistage.py` script used to train the published models did not explicitly set a random seed or enable PyTorch deterministic algorithms, so the original random state is unknown. For new training runs, this repository provides `--seed` and `--deterministic` options. The value `2026` above is only an example for a new run. Version 2 checkpoints record the new run's configuration and environment; the original `.pp` models do not contain those records. Matching seeds and settings across different environments does not guarantee identical results.
+For new training runs, this repository provides `--seed` and `--deterministic` options. The value `2026` above is only an example for a new run. Version 2 checkpoints record the new run's configuration and environment; the original `.pp` models do not contain those records. Matching seeds and settings across different environments does not guarantee identical results.
 
 命令行入口及 `load_trained_model` 会执行上述完整语义校验；`load_single_stage`、`load_multistage` 是供工具代码使用的低层权重读取函数，其中多阶段读取可通过 `expected_stages` 强制检查阶段数。
 

@@ -1,0 +1,223 @@
+# 原 LNO + 可选多阶段训练
+
+本目录是从原 LNO 的 Train_Validation 代码派生的独立增强工程，保留基线网络、数据集处理、单阶段训练、测试和 Legendre 滤波器。
+
+在此基础上主要增加或修正了：
+
+1. `multistage.py`：多阶段残差训练逻辑。
+2. `main.py --stages 1/2/3`：选择是否启用多阶段。
+3. GPU 优先的设备选择、确定性运行和版本化安全检查点。
+4. 数据与测试辅助函数的多帧通道排列、旧 PyTorch 检查点及评估指标兼容处理。
+5. 缓存复用前检查数据划分，避免先评估后训练时误用空训练缓存。
+
+原目录没有被修改。
+
+## 目录
+
+```text
+LNO_multistage_plugin_minimal/
+├─ main.py                  # LNO 唯一入口，增加 --stages
+├─ multistage.py            # 多阶段插件
+├─ PlotComNS.m
+├─ Data/
+│  └─ DatasetNS.py          # 原 LNO 数据集
+├─ lib/
+│  ├─ networkNS.py          # 原 LNO 网络
+│  ├─ train.py              # 原单阶段训练
+│  ├─ test.py               # 原测试
+│  ├─ utils.py
+│  └─ legendres/*.mat       # 原 LNO 必需滤波器
+└─ tests/
+   └─ test_multistage.py
+```
+
+没有复制 `.idea`、缓存、日志、已训练模型、输出结果和频响分析脚本。
+
+## 环境安装
+
+建议使用 Python 3.12，并在独立环境中安装锁定版本：
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+当前验证环境为 Python 3.12.13、PyTorch 2.12.0、NumPy 2.5.1、SciPy 1.18.0；GPU 环境使用 CUDA 12.6。
+
+## 使用方法
+
+先进入这个独立目录：
+
+```powershell
+Set-Location "<project-directory>\LNO_multistage_plugin_minimal"
+```
+
+原始单阶段 LNO：
+
+```powershell
+python main.py -n baseline --stages 1 --data-dir "G:/LNOdata/"
+```
+
+两阶段：
+
+```powershell
+python main.py -n stage2 --stages 2 --data-dir "G:/LNOdata/"
+```
+
+三阶段：
+
+```powershell
+python main.py -n stage3 --stages 3 --data-dir "G:/LNOdata/"
+```
+
+`--stages` 默认是 `1`，因此不写这个参数时就是原始 LNO：
+
+```powershell
+python main.py -n baseline --data-dir "G:/LNOdata/"
+```
+
+## 接口行为
+
+| 参数 | 训练代码 | 模型文件 |
+|---|---|---|
+| `--stages 1` | 原 `lib/train.py` | `models/<name>_model.pp` |
+| `--stages 2` | `multistage.py` | `models/<name>_multistage.pt` |
+| `--stages 3` | `multistage.py` | `models/<name>_multistage.pt` |
+
+无论选择哪种模式，训练结束后都会继续调用原来的 `lib/test.py`，生成 `outputs` 和 `MSE_t` 结果。
+
+新生成的模型使用版本 2 检查点：只保存 `state_dict`、网络参数、完整实验配置和运行环境版本，可通过 `weights_only=True` 安全加载。版本 1 多阶段模型仍可直接读取。
+
+早期单阶段 `torch.save(model)` 文件属于 Python pickle。只有确认文件可信时才允许加载：
+
+```powershell
+python main.py -n old_baseline --eval-only --allow-legacy-pickle --data-dir "G:/LNOdata/"
+```
+
+加载可信旧模型时，程序还会补齐旧版 PyTorch `GELU` 缺失的 `approximate="none"` 属性，使原 LNO 整模型检查点可以在新版 PyTorch 中继续前向运行。
+
+`--eval-only` 会跳过训练和保存，直接加载已有检查点，因此不会覆盖旧模型。版本 1 多阶段模型也通过同一方式评估：
+
+```powershell
+python main.py -n old_stage3 --stages 3 --eval-only --data-dir "G:/LNOdata/"
+```
+
+## 多阶段原理
+
+```text
+Stage 1: f1(x) ≈ y
+Stage 2: f2(x) ≈ y - f1(x)
+Stage 3: f3(x) ≈ y - f1(x) - f2(x)
+最终输出: F(x) = f1(x) + f2(x) + f3(x)
+```
+
+训练 Stage 2/3 时，已经训练完成的阶段会被冻结。自回归滚动到下一时刻时，使用当前所有阶段的总输出，而不是只使用残差网络输出。
+
+训练节奏与原代码一致：
+
+```text
+每个 Stage
+└─ 10 rounds
+   └─ 每轮 20 epochs
+      └─ 每个 epoch 500 iterations
+```
+
+每个阶段使用独立 Adam；每轮结束执行原来的 StepLR（`gamma=0.7`）。
+
+## 调整原 LNO 参数
+
+在 `main.py` 顶部修改，位置和原代码一致：
+
+```python
+learning_rate = 0.001
+weight_decay = 1e-4
+batch_size = 2
+rounds = 10
+epochs = 20
+recurrent = 10
+
+Re = 100
+Ma = 2
+t_interval = 5
+
+N = 12
+K = 2
+M = 6
+num_blocks = 4
+```
+
+## 数据目录
+
+```text
+G:/LNOdata/
+└─ ComNS128Re100Ma2/
+   ├─ ComNS128Re100Ma2_1.mat
+   ├─ ComNS128Re100Ma2_2.mat
+   └─ ...
+```
+
+`main.py` 会自动处理 `--data-dir` 末尾有没有 `/`。
+
+## 计算设备
+
+`--device` 默认是 `auto`：有可用 CUDA GPU 时优先使用 GPU，否则自动回退到 CPU。
+
+```powershell
+# 自动选择（默认）
+python main.py -n stage2 --stages 2 --device auto --data-dir "G:/LNOdata/"
+
+# 明确指定设备
+python main.py -n stage2 --stages 2 --device cuda:0 --data-dir "G:/LNOdata/"
+python main.py -n stage2 --stages 2 --device cpu --data-dir "G:/LNOdata/"
+```
+
+CPU 路径可用于功能验证，但完整 LNO 训练计算量较大，实际训练仍建议使用 GPU。
+
+## 可复现运行
+
+默认随机种子为 `0`，并启用 PyTorch 确定性算法。Python、NumPy、PyTorch 和全部 CUDA 设备会使用同一个种子：
+
+```powershell
+python main.py -n stage2 --stages 2 --seed 2026 --device auto --data-dir "G:/LNOdata/"
+```
+
+若更重视训练速度并接受非确定性结果，可使用：
+
+```powershell
+python main.py -n stage2 --stages 2 --seed 2026 --no-deterministic --data-dir "G:/LNOdata/"
+```
+
+每个版本 2 检查点都会记录种子、确定性开关、数据划分、网络配置、优化器与学习率调度器、梯度裁剪、初始化系数、实际运行设备与 GPU 信息、Python/PyTorch/NumPy/SciPy/CUDA 版本，以及核心源代码和当前 Legendre 滤波器资产的 SHA-256 指纹。加载时会核对完整网络配置、阶段数、物理任务、数据划分、输入历史长度和训练 rollout，避免把不完整或语义不兼容的权重静默用于评估。
+
+命令行入口及 `load_trained_model` 会执行上述完整语义校验；`load_single_stage`、`load_multistage` 是供工具代码使用的低层权重读取函数，其中多阶段读取可通过 `expected_stages` 强制检查阶段数。
+
+## 误差定义
+
+为保持与原 LNO 历史结果可比较，同时明确提供真正的均方误差，评估会生成两份日志：
+
+- `MSE_t/<name>_MSE.log`：原 LNO 历史误差口径，即速度误差模长与 `rho/T` 绝对误差。
+- `MSE_t/<name>_true_MSE.log`：真正的均方误差：
+
+```text
+UV  = mean((u_pred-u_true)^2 + (v_pred-v_true)^2)
+rho = mean((rho_pred-rho_true)^2)
+T   = mean((T_pred-T_true)^2)
+```
+
+## 测试
+
+插件测试不需要 CUDA 或真实数据：
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+测试会覆盖多阶段逻辑、多帧输入通道排列以及 CPU/GPU 设备迁移。
+
+## 当前验证范围与限制
+
+- 44 项自动化测试通过，包括先评估后训练、更换训练集、兼容缓存复用及独立缓存再次加载。此次发布未重新运行完整训练实验。
+- 多阶段训练保留现有实现：旧阶段通过 `torch.no_grad()` 计算。这不仅冻结旧参数，也切断经过旧阶段的输入梯度，因此多步 rollout 的梯度不等同于完整组合模型的梯度；本次缓存修复没有改变这一行为。
+- 当前网络仍按四通道、单帧输入使用；辅助函数的多帧通道修复不代表网络已支持 `in_length > 1`。
+- 当前 `rho/T` 评估采用对数变量的逆变换；将 `if_ln` 改为 `False` 时，需同步调整评估转换逻辑。
+- 仓库包含运行所需的 Legendre 滤波器，不包含训练/测试原始数据、预训练权重或实验输出。数据缓存采用 pickle，仅应加载可信来源的缓存。
+- 兼容的旧缓存继续复用；数据划分不兼容时另建带训练集标识的缓存目录，保留旧缓存。首次新建需要原始数据和额外磁盘空间。

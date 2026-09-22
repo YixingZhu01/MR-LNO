@@ -206,27 +206,25 @@ python main.py -n stage2 --stages 2 --device cpu --data-dir "<data-root>"
 
 CPU 路径可用于功能验证，但完整 LNO 训练计算量较大，实际训练仍建议使用 GPU。
 
-## 新运行的随机性控制（不代表历史模型的训练设置）
+## 新训练的随机性控制
 
-作者提供的原训练脚本没有显式固定 Python、NumPy、PyTorch/CUDA 随机种子，也没有启用确定性算法。不能把下面的默认种子 `0`、确定性开关或当前验证环境追溯为已发布模型的历史训练条件，不能保证重新训练得到逐位相同的权重。
+我训练仓库中已发布模型时使用的 `main_NS_multistage.py` 没有显式设置随机种子，也没有启用 PyTorch 确定性算法。因此，无法根据现有记录确定当时的随机状态，重新训练也不能保证得到完全相同的权重。
 
-本仓库整理版为**今后的新运行**增加了 `configure_reproducibility`：设置 Python、NumPy、PyTorch 和 CUDA 的种子；启用 `torch.use_deterministic_algorithms(True)`；关闭 cuDNN benchmark、启用 cuDNN deterministic，并配置 cuBLAS 工作区。默认种子为 `0`，也可自行指定：
-
-```powershell
-python main.py -n stage2 --stages 2 --seed 2026 --device auto --data-dir "<data-root>"
-```
-
-这些控制旨在减少同一代码、数据、缓存状态和软硬件环境下的运行差异，不保证跨设备、跨版本完全一致，也不是已经完成全程训练复现的证明。代码内设置的 `PYTHONHASHSEED` 不会追溯改变当前解释器启动时的哈希种子；若需控制它，应在启动 Python 前设置环境变量。
-
-可使用下面的开关关闭确定性算法要求；它仍然设置随机种子，因此也不等于原训练脚本未固定种子的行为：
+当前仓库的 `main.py` 为今后的训练提供了 `--seed` 和 `--deterministic` 参数。运行时会用指定种子初始化 Python `random`、NumPy 和 PyTorch；有 CUDA 设备时也会设置 CUDA 随机种子。确定性选项默认开启。下面以 `2026` 作为新训练的示例种子，该数字与已发布模型的训练无关：
 
 ```powershell
-python main.py -n stage2 --stages 2 --seed 2026 --no-deterministic --data-dir "<data-root>"
+python main.py -n stage3_newrun --stages 3 --seed 2026 --device auto --data-dir "<data-root>"
 ```
 
-整理版新训练生成的版本 2 检查点会记录种子、确定性开关、数据划分、网络配置、优化器与学习率调度器、梯度裁剪、初始化系数、实际运行设备与 GPU 信息、Python/PyTorch/NumPy/SciPy/CUDA 版本，以及核心源代码和当前 Legendre 滤波器资产的 SHA-256 指纹。加载时核对相应配置。**这些新记录机制不适用于历史 `.pp` 文件；推理包转换也不会补造未知的历史种子或环境。**
+如果新训练不要求 PyTorch 使用确定性算法，可以加上 `--no-deterministic`；指定的随机种子仍会生效：
 
-Randomness controls were added to the refactored code for new runs. The supplied original training script does not explicitly fix random seeds or enable deterministic algorithms. The published weights must not be described as having been trained with seed 0 or the current validation environment. Matching seeds and deterministic settings do not guarantee identical results across software/hardware environments or reproduce unknown historical random states.
+```powershell
+python main.py -n stage3_newrun --stages 3 --seed 2026 --no-deterministic --data-dir "<data-root>"
+```
+
+为比较新训练结果，应同时保持代码、数据、数据缓存及软硬件环境一致。即使固定种子和启用确定性算法，也不能保证不同环境下得到完全相同的结果。当前 `main.py` 在新生成的版本 2 检查点中保存运行配置和环境信息；这些记录不属于已上传的历史 `.pp` 模型。
+
+The `main_NS_multistage.py` script used to train the published models did not explicitly set a random seed or enable PyTorch deterministic algorithms, so the original random state is unknown. For new training runs, this repository provides `--seed` and `--deterministic` options. The value `2026` above is only an example for a new run. Version 2 checkpoints record the new run's configuration and environment; the original `.pp` models do not contain those records. Matching seeds and settings across different environments does not guarantee identical results.
 
 命令行入口及 `load_trained_model` 会执行上述完整语义校验；`load_single_stage`、`load_multistage` 是供工具代码使用的低层权重读取函数，其中多阶段读取可通过 `expected_stages` 强制检查阶段数。
 
